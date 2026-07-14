@@ -60,3 +60,22 @@ services:
 volumes:
   redis-data:
     driver: local
+
+  # ---- MCP Server（Model Context Protocol） ----
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kb-mcp
+    restart: always
+    ports:
+      - "8001:8001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env
+    environment:
+      - REDIS_HOST=redis
+    command: ["python", "-m", "backend.mcp_server", "--sse", "--port", "8001"]
