@@ -69,9 +69,13 @@ class ReActAgent:
             if not answer:
                 return "抱歉，暂时无法回答该问题。", False
 
-            # 校验
-            passed = await self_rag.validate_answer(query, answer, context)
-            logger.info(f"ReAct 校验 第{attempt + 1}轮: {'通过' if passed else '未通过'}")
+            # 校验（仅当有知识库上下文时）
+            if context.strip():
+                passed = await self_rag.validate_answer(query, answer, context)
+                logger.info(f"ReAct 校验 第{attempt + 1}轮: {'通过' if passed else '未通过'}")
+            else:
+                passed = True  # 无上下文时跳过校验
+                logger.info(f"ReAct 校验 第{attempt + 1}轮: 跳过（无上下文）")
 
             if passed:
                 return answer, True
