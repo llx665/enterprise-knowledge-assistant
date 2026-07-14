@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>企业智能知识库助手</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+  <a href="/" class="navbar-brand">🏢 企业知识库</a>
+  <ul class="navbar-nav">
+    <li><a href="/" class="active">首页</a></li>
+    <li><a href="/static/chat.html">问答</a></li>
+    <li><a href="/static/upload.html">上传文档</a></li>
+    <li><a href="/static/knowledge.html">知识库</a></li>
+    <li><a href="/static/logs.html">日志统计</a></li>
+  </ul>
+  <div class="navbar-right">
+    <span class="badge badge-visitor" id="userBadge">访客</span>
+    <button class="btn btn-outline btn-sm" onclick="showLogin()">登录</button>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="card" style="text-align:center;padding:60px 40px;margin-bottom:24px;">
+    <h1 style="font-size:32px;margin-bottom:16px;">🏢 企业智能知识库助手</h1>
+    <p style="color:#666;font-size:16px;max-width:600px;margin:0 auto 24px;">
+      基于 RAG 技术的智能问答系统，支持多格式文档上传、混合检索、溯源回答。
+    </p>
+    <div style="display:flex;gap:12px;justify-content:center;">
+      <a href="/static/upload.html" class="btn btn-primary">上传文档</a>
+      <a href="/static/chat.html" class="btn btn-outline">开始问答</a>
+    </div>
+  </div>
+
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card"><div class="stat-value" id="statDocs">-</div><div class="stat-label">文档数量</div></div>
+    <div class="stat-card"><div class="stat-value" id="statChunks">-</div><div class="stat-label">知识片段</div></div>
+    <div class="stat-card"><div class="stat-value" id="statSearches">-</div><div class="stat-label">总检索次数</div></div>
+    <div class="stat-card"><div class="stat-value" id="statAvgTime">-</div><div class="stat-label">平均耗时(ms)</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:24px;">
+    <h3 style="margin-bottom:16px;">快速开始</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;">
+      <div class="card" style="box-shadow:none;border:1px solid var(--border);">
+        <h4>📤 上传文档</h4>
+        <p style="font-size:13px;color:#666;margin:8px 0;">支持 PDF、Word、HTML、Markdown 等格式</p>
+        <a href="/static/upload.html" class="btn btn-primary btn-sm">前往上传</a>
+      </div>
+      <div class="card" style="box-shadow:none;border:1px solid var(--border);">
+        <h4>💬 智能问答</h4>
+        <p style="font-size:13px;color:#666;margin:8px 0;">流式输出、来源溯源、ReAct 自省校验</p>
+        <a href="/static/chat.html" class="btn btn-primary btn-sm">开始问答</a>
+      </div>
+      <div class="card" style="box-shadow:none;border:1px solid var(--border);">
+        <h4>📊 日志统计</h4>
+        <p style="font-size:13px;color:#666;margin:8px 0;">查看检索记录、热门问题、性能指标</p>
+        <a href="/static/logs.html" class="btn btn-primary btn-sm">查看统计</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="loginModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:999;align-items:center;justify-content:center;">
+  <div class="card" style="width:360px;padding:32px;">
+    <h3 style="margin-bottom:20px;">登录</h3>
+    <div class="form-group">
+      <label class="form-label">用户名</label>
+      <input id="loginUser" class="form-input" value="admin" placeholder="admin / visitor">
+    </div>
+    <div class="form-group">
+      <label class="form-label">密码</label>
+      <input id="loginPass" class="form-input" type="password" value="admin123" placeholder="admin123 / visitor123">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="hideLogin()">取消</button>
+      <button class="btn btn-primary" onclick="doLogin()">登录</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let appState = { user: 'visitor', role: 'visitor', token: '' };
+
+function showToast(msg, type='info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast toast-' + type;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+function showLogin() {
+  document.getElementById('loginModal').style.display = 'flex';
+}
+
+function hideLogin() {
+  document.getElementById('loginModal').style.display = 'none';
+}
+
+async function doLogin() {
+  const username = document.getElementById('loginUser').value;
+  const password = document.getElementById('loginPass').value;
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username, password})
+    });
+    const data = await r.json();
+    if (data.code === 200) {
+      appState.token = data.data.token;
+      appState.user = data.data.user.username;
+      appState.role = data.data.user.role;
+      localStorage.setItem('token', data.data.token);
+      localStorage.setItem('user', data.data.user.username);
+      localStorage.setItem('role', data.data.user.role);
+      document.getElementById('userBadge').textContent = appState.user + ' (' + (appState.role === 'admin' ? '管理员' : '访客') + ')';
+      document.getElementById('userBadge').className = appState.role === 'admin' ? 'badge badge-admin' : 'badge badge-visitor';
+      hideLogin();
+      showToast('登录成功', 'success');
+    } else {
+      showToast(data.message || '登录失败', 'error');
+    }
+  } catch(e) {
+    showToast('登录请求失败: ' + e.message, 'error');
+  }
+}
+
+async function loadStats() {
+  try {
+    const r = await fetch('/api/knowledge/stats');
+    const d = await r.json();
+    if (d.code === 200 && d.data) {
+      document.getElementById('statDocs').textContent = d.data.doc_count || 0;
+    }
+  } catch(e) {}
+  try {
+    const r = await fetch('/api/index/info');
+    const d = await r.json();
+    if (d.code === 200 && d.data) {
+      document.getElementById('statChunks').textContent = d.data.chunk_count || 0;
+    }
+  } catch(e) {}
+  try {
+    const r = await fetch('/api/logs/stats');
+    const d = await r.json();
+    if (d.code === 200 && d.data) {
+      document.getElementById('statSearches').textContent = d.data.total_searches || 0;
+      document.getElementById('statAvgTime').textContent = d.data.avg_duration_ms || 0;
+    }
+  } catch(e) {}
+}
+
+// 恢复登录状态
+(function() {
+  const token = localStorage.getItem('token');
+  if (token) {
+    appState.token = token;
+    appState.user = localStorage.getItem('user') || 'visitor';
+    appState.role = localStorage.getItem('role') || 'visitor';
+    document.getElementById('userBadge').textContent = appState.user + ' (' + (appState.role === 'admin' ? '管理员' : '访客') + ')';
+    document.getElementById('userBadge').className = appState.role === 'admin' ? 'badge badge-admin' : 'badge badge-visitor';
+  }
+  loadStats();
+})();
+</script>
+</body>
+</html>

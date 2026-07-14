@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知识库管理 - 企业知识库</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+  <a href="/" class="navbar-brand">🏢 企业知识库</a>
+  <ul class="navbar-nav">
+    <li><a href="/">首页</a></li>
+    <li><a href="/static/chat.html">问答</a></li>
+    <li><a href="/static/upload.html">上传文档</a></li>
+    <li><a href="/static/knowledge.html" class="active">知识库</a></li>
+    <li><a href="/static/logs.html">日志统计</a></li>
+  </ul>
+  <div class="navbar-right">
+    <button class="btn btn-outline btn-sm" onclick="rebuildIndex()">重建索引</button>
+    <span class="badge badge-visitor" id="userBadge">访客</span>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h2 class="page-title">📚 知识库管理</h2>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-outline btn-sm" onclick="loadIndexInfo()">刷新索引信息</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteSelected()">删除选中</button>
+    </div>
+  </div>
+
+  <div class="stats-grid" style="margin-bottom:20px;">
+    <div class="stat-card"><div class="stat-value" id="idxDocCount">-</div><div class="stat-label">文档数</div></div>
+    <div class="stat-card"><div class="stat-value" id="idxChunkCount">-</div><div class="stat-label">片段数</div></div>
+    <div class="stat-card"><div class="stat-value" id="idxVersionCount">-</div><div class="stat-label">版本数</div></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3>文档列表</h3>
+      <input class="form-input" id="searchDoc" placeholder="搜索文件名..." style="width:240px;" oninput="filterDocs()">
+    </div>
+    <table class="table">
+      <thead><tr><th style="width:40px;"><input type="checkbox" id="selectAll" onchange="toggleAll()"></th><th>文件名</th><th>类型</th><th>大小</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="docTableBody"><tr><td colspan="6" style="text-align:center;color:#999;">加载中...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <h3 style="margin-bottom:12px;">索引版本历史</h3>
+    <div id="versionList">加载中...</div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let allDocs = [];
+let selectedDocs = new Set();
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast toast-' + type;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+async function loadIndexInfo() {
+  try {
+    const r = await fetch('/api/index/info');
+    const d = await r.json();
+    if (d.code === 200 && d.data) {
+      document.getElementById('idxDocCount').textContent = d.data.version_count || 0;
+      document.getElementById('idxChunkCount').textContent = d.data.chunk_count || 0;
+      document.getElementById('idxVersionCount').textContent = d.data.version_count || 0;
+      // 版本历史
+      const vl = document.getElementById('versionList');
+      if (d.data.versions && d.data.versions.length > 0) {
+        vl.innerHTML = d.data.versions.slice(0, 20).map(v =>
+          '<div class="doc-item"><div class="doc-info"><span class="doc-name">版本: ' + v.version_id + '</span><span class="doc-meta">' + v.created_at + ' | ' + v.chunk_count + ' 片段 | doc: ' + (v.doc_id || '') + '</span></div></div>'
+        ).join('');
+      } else {
+        vl.innerHTML = '<p style="color:#999;font-size:13px;">暂无版本记录</p>';
+      }
+    }
+  } catch(e) {
+    showToast('加载索引信息失败', 'error');
+  }
+}
+
+async function loadDocuments() {
+  try {
+    const r = await fetch('/api/knowledge/documents');
+    const d = await r.json();
+    if (d.code === 200) {
+      allDocs = d.data || [];
+      renderDocs(allDocs);
+    }
+  } catch(e) {
+    document.getElementById('docTableBody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#f00;">加载失败: ' + e.message + '</td></tr>';
+  }
+}
+
+function renderDocs(docs) {
+  const tbody = document.getElementById('docTableBody');
+  if (docs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">暂无文档</td></tr>';
+    return;
+  }
+  tbody.innerHTML = docs.map(d => {
+    const viewUrl = "/api/knowledge/documents/view?filename=" + encodeURIComponent(d.filename);
+    return '<tr>' +
+      '<td><input type="checkbox" value="' + d.doc_id + '" onchange="toggleDoc(\'' + d.doc_id + '\')"></td>' +
+      '<td>' + d.filename + '</td>' +
+      '<td>' + (d.file_type || '-') + '</td>' +
+      '<td>' + (d.file_size ? (d.file_size / 1024).toFixed(1) + ' KB' : '-') + '</td>' +
+      '<td><span class="badge badge-success">' + (d.status || 'completed') + '</span></td>' +
+      '<td>' +
+        '<button class="btn btn-outline btn-sm" onclick="window.open(\'' + viewUrl + '\',\'_blank\')" style="margin-right:4px;">查看</button>' +
+        '<button class="btn btn-danger btn-sm" onclick="deleteDoc(\'' + d.doc_id + '\')">删除</button>' +
+      '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function filterDocs() {
+  const q = document.getElementById('searchDoc').value.toLowerCase();
+  const filtered = allDocs.filter(d => d.filename.toLowerCase().includes(q));
+  renderDocs(filtered);
+}
+
+function toggleAll() {
+  const checked = document.getElementById('selectAll').checked;
+  document.querySelectorAll('#docTableBody input[type="checkbox"]').forEach(cb => cb.checked = checked);
+  selectedDocs.clear();
+  if (checked) allDocs.forEach(d => selectedDocs.add(d.doc_id));
+}
+
+function toggleDoc(id) {
+  if (selectedDocs.has(id)) selectedDocs.delete(id);
+  else selectedDocs.add(id);
+}
+
+async function deleteDoc(id) {
+  if (!confirm('确定删除该文档？')) return;
+  const token = localStorage.getItem('token');
+  try {
+    const r = await fetch('/api/knowledge/documents/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (token || '')},
+      body: JSON.stringify({doc_ids: [id]}),
+    });
+    const d = await r.json();
+    if (d.code === 200) {
+      showToast('删除任务已提交', 'success');
+      setTimeout(loadDocuments, 1000);
+    } else {
+      showToast(d.message || '删除失败', 'error');
+    }
+  } catch(e) {
+    showToast('删除请求失败', 'error');
+  }
+}
+
+async function deleteSelected() {
+  if (selectedDocs.size === 0) { showToast('请先选择文档', 'info'); return; }
+  if (!confirm('确定删除选中的 ' + selectedDocs.size + ' 个文档？')) return;
+  const token = localStorage.getItem('token');
+  try {
+    const r = await fetch('/api/knowledge/documents/delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (token || '')},
+      body: JSON.stringify({doc_ids: Array.from(selectedDocs)}),
+    });
+    const d = await r.json();
+    if (d.code === 200) {
+      showToast('批量删除任务已提交', 'success');
+      selectedDocs.clear();
+      setTimeout(loadDocuments, 1000);
+    }
+  } catch(e) {
+    showToast('批量删除请求失败', 'error');
+  }
+}
+
+async function rebuildIndex() {
+  if (!confirm('确定重建索引？此操作将清除所有现有索引并重新构建。')) return;
+  const token = localStorage.getItem('token');
+  try {
+    const r = await fetch('/api/index/rebuild', {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + (token || '')},
+    });
+    const d = await r.json();
+    showToast(d.message || '重建任务已提交', 'success');
+  } catch(e) {
+    showToast('重建请求失败', 'error');
+  }
+}
+
+(function() {
+  const token = localStorage.getItem('token');
+  if (token) {
+    document.getElementById('userBadge').textContent = (localStorage.getItem('user') || '访客');
+    document.getElementById('userBadge').className = localStorage.getItem('role') === 'admin' ? 'badge badge-admin' : 'badge badge-visitor';
+  }
+  loadIndexInfo();
+  loadDocuments();
+})();
+</script>
+</body>
+</html>

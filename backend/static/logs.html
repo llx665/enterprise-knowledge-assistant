@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日志统计 - 企业知识库</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+  <a href="/" class="navbar-brand">🏢 企业知识库</a>
+  <ul class="navbar-nav">
+    <li><a href="/">首页</a></li>
+    <li><a href="/static/chat.html">问答</a></li>
+    <li><a href="/static/upload.html">上传文档</a></li>
+    <li><a href="/static/knowledge.html">知识库</a></li>
+    <li><a href="/static/logs.html" class="active">日志统计</a></li>
+  </ul>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h2 class="page-title">📊 日志统计</h2>
+    <div style="display:flex;gap:8px;">
+      <select class="form-input" id="actionFilter" style="width:120px;" onchange="loadLogs()">
+        <option value="">全部</option>
+        <option value="search">检索</option>
+        <option value="upload">上传</option>
+        <option value="delete">删除</option>
+        <option value="rebuild">重建</option>
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="loadStats()">刷新</button>
+    </div>
+  </div>
+
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card"><div class="stat-value" id="statTotal">-</div><div class="stat-label">总检索次数</div></div>
+    <div class="stat-card"><div class="stat-value" id="statAvg">-</div><div class="stat-label">平均耗时(ms)</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:20px;">
+    <h3 style="margin-bottom:12px;">🔥 热门问题 TOP 10</h3>
+    <div id="hotQueries">加载中...</div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:12px;">操作记录</h3>
+    <table class="table">
+      <thead><tr><th>时间</th><th>操作</th><th>用户</th><th>详情</th><th>耗时(ms)</th></tr></thead>
+      <tbody id="logTableBody"><tr><td colspan="5" style="text-align:center;color:#999;">加载中...</td></tr></tbody>
+    </table>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
+      <span id="pageInfo" style="font-size:13px;color:#666;">第 1 页</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline btn-sm" id="prevBtn" onclick="changePage(-1)">上一页</button>
+        <button class="btn btn-outline btn-sm" id="nextBtn" onclick="changePage(1)">下一页</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentPage = 1;
+let totalRecords = 0;
+const pageSize = 20;
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.className = 'toast toast-' + type;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+async function loadStats() {
+  try {
+    const r = await fetch('/api/logs/stats');
+    const d = await r.json();
+    if (d.code === 200 && d.data) {
+      document.getElementById('statTotal').textContent = d.data.total_searches || 0;
+      document.getElementById('statAvg').textContent = (d.data.avg_duration_ms || 0).toFixed(1);
+    }
+  } catch(e) {}
+
+  try {
+    const r = await fetch('/api/chat/hot-queries?top_k=10');
+    const d = await r.json();
+    const hq = document.getElementById('hotQueries');
+    if (d.code === 200 && d.data && d.data.length > 0) {
+      hq.innerHTML = d.data.map((q, i) =>
+        '<div class="doc-item"><span style="font-weight:' + (i < 3 ? 600 : 400) + ';">' + (i+1) + '. ' + (q.query || q.question || '') + '</span><span class="badge badge-success">' + q.count + ' 次</span></div>'
+      ).join('');
+    } else {
+      hq.innerHTML = '<p style="color:#999;font-size:13px;">暂无热门查询数据</p>';
+    }
+  } catch(e) {}
+}
+
+async function loadLogs() {
+  const action = document.getElementById('actionFilter').value;
+  const url = '/api/logs/list?page=' + currentPage + '&page_size=' + pageSize + (action ? '&action=' + action : '');
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    if (d.code === 200) {
+      totalRecords = d.total || 0;
+      const tbody = document.getElementById('logTableBody');
+      if (d.data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;">暂无记录</td></tr>';
+      } else {
+        tbody.innerHTML = d.data.map(r =>
+          '<tr><td>' + r.timestamp + '</td><td>' + r.action + '</td><td>' + r.user + '</td><td>' + (r.detail || '').slice(0, 60) + '</td><td>' + (r.duration_ms || 0).toFixed(1) + '</td></tr>'
+        ).join('');
+      }
+      const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+      document.getElementById('pageInfo').textContent = '第 ' + currentPage + ' 页 / 共 ' + totalPages + ' 页 (' + totalRecords + ' 条)';
+      document.getElementById('prevBtn').disabled = currentPage <= 1;
+      document.getElementById('nextBtn').disabled = currentPage >= totalPages;
+    }
+  } catch(e) {
+    document.getElementById('logTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#f00;">加载失败</td></tr>';
+  }
+}
+
+function changePage(delta) {
+  currentPage = Math.max(1, currentPage + delta);
+  loadLogs();
+}
+
+loadStats();
+loadLogs();
+</script>
+</body>
+</html>

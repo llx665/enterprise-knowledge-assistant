@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>上传文档 - 企业知识库</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<nav class="navbar">
+  <a href="/" class="navbar-brand">🏢 企业知识库</a>
+  <ul class="navbar-nav">
+    <li><a href="/">首页</a></li>
+    <li><a href="/static/chat.html">问答</a></li>
+    <li><a href="/static/upload.html" class="active">上传文档</a></li>
+    <li><a href="/static/knowledge.html">知识库</a></li>
+    <li><a href="/static/logs.html">日志统计</a></li>
+  </ul>
+  <div class="navbar-right">
+    <span class="badge badge-visitor" id="userBadge">访客</span>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h2 class="page-title">📤 上传文档</h2>
+    <span style="font-size:13px;color:#666;">支持: PDF, DOCX, HTML, Markdown, TXT | 单文件最大 50MB</span>
+  </div>
+
+  <div class="card" style="margin-bottom:24px;">
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <div class="drop-zone-icon">📄</div>
+      <div class="drop-zone-text" id="dropText">拖拽文件到此处，或点击选择文件</div>
+    </div>
+    <input type="file" id="fileInput" multiple accept=".pdf,.docx,.html,.htm,.md,.txt" style="display:none" onchange="handleFiles(this.files)">
+    <div id="fileList" style="margin-top:16px;"></div>
+    <div id="progressArea" style="display:none;margin-top:16px;">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <p id="progressText" style="font-size:13px;color:#666;text-align:center;">正在上传...</p>
+    </div>
+    <button class="btn btn-primary" id="uploadBtn" onclick="startUpload()" disabled style="margin-top:16px;width:100%;">开始上传</button>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:12px;">上传记录</h3>
+    <div id="uploadHistory">暂无上传记录</div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let selectedFiles = [];
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast toast-' + type;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+// 拖拽事件
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('dragover');
+  if (e.dataTransfer.files) handleFiles(e.dataTransfer.files);
+});
+
+function handleFiles(files) {
+  for (const f of files) {
+    const ext = '.' + f.name.split('.').pop().toLowerCase();
+    if (!['.pdf','.docx','.html','.htm','.md','.txt'].includes(ext)) {
+      showToast(f.name + ': 不支持的文件格式', 'error');
+      continue;
+    }
+    if (f.size > 50 * 1024 * 1024) {
+      showToast(f.name + ': 文件超过50MB限制', 'error');
+      continue;
+    }
+    selectedFiles.push(f);
+  }
+  renderFileList();
+  document.getElementById('uploadBtn').disabled = selectedFiles.length === 0;
+}
+
+function renderFileList() {
+  const container = document.getElementById('fileList');
+  if (selectedFiles.length === 0) {
+    container.innerHTML = '<p style="color:#999;font-size:13px;">暂未选择文件</p>';
+    return;
+  }
+  container.innerHTML = selectedFiles.map((f, i) =>
+    '<div class="doc-item"><div class="doc-info"><span class="doc-name">' + f.name + '</span><span class="doc-meta">' + (f.size / 1024).toFixed(1) + ' KB</span></div><button class="btn btn-danger btn-sm" onclick="removeFile(' + i + ')">移除</button></div>'
+  ).join('');
+}
+
+function removeFile(idx) {
+  selectedFiles.splice(idx, 1);
+  renderFileList();
+  document.getElementById('uploadBtn').disabled = selectedFiles.length === 0;
+}
+
+async function startUpload() {
+  if (selectedFiles.length === 0) return;
+
+  const token = localStorage.getItem('token');
+  if (!token) {
+    showToast('请先以管理员身份登录', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('uploadBtn');
+  btn.disabled = true;
+  btn.textContent = '上传中...';
+
+  const pa = document.getElementById('progressArea');
+  pa.style.display = 'block';
+  document.getElementById('progressFill').style.width = '0%';
+
+  const formData = new FormData();
+  for (const f of selectedFiles) formData.append('files', f);
+
+  try {
+    const resp = await fetch('/api/upload', {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + token},
+      body: formData,
+    });
+    const data = await resp.json();
+
+    if (data.code === 200) {
+      document.getElementById('progressFill').style.width = '100%';
+      document.getElementById('progressText').textContent = '上传完成！共 ' + (data.data.uploaded || []).length + ' 个文件';
+      showToast('上传成功，文档正在后台处理', 'success');
+      selectedFiles = [];
+      renderFileList();
+      loadUploadHistory();
+    } else {
+      showToast(data.message || '上传失败', 'error');
+      document.getElementById('progressText').textContent = '上传失败';
+    }
+  } catch(e) {
+    showToast('上传请求失败: ' + e.message, 'error');
+    document.getElementById('progressText').textContent = '上传失败';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '开始上传';
+  }
+}
+
+async function loadUploadHistory() {
+  try {
+    const resp = await fetch('/api/logs/list?action=upload&page_size=10');
+    const data = await resp.json();
+    const container = document.getElementById('uploadHistory');
+    if (data.code === 200 && data.data.length > 0) {
+      container.innerHTML = '<div style="margin-top:8px;">' + data.data.map(r =>
+        '<div class="doc-item"><div class="doc-info"><span class="doc-name">' + r.detail + '</span><span class="doc-meta">' + r.timestamp + '</span></div></div>'
+      ).join('') + '</div>';
+    }
+  } catch(e) {}
+}
+
+(function() {
+  const token = localStorage.getItem('token');
+  if (token) {
+    document.getElementById('userBadge').textContent = (localStorage.getItem('user') || '访客');
+    document.getElementById('userBadge').className = localStorage.getItem('role') === 'admin' ? 'badge badge-admin' : 'badge badge-visitor';
+  }
+  loadUploadHistory();
+})();
+</script>
+</body>
+</html>

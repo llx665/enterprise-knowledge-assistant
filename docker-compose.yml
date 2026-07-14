@@ -1,0 +1,62 @@
+# ============================================================
+# 企业智能知识库助手 - Docker Compose 编排
+# ============================================================
+version: "3.8"
+
+services:
+  # ---- Redis 缓存服务 ----
+  redis:
+    image: redis:7-alpine
+    container_name: kb-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ---- RQ Worker（异步任务处理） ----
+  rq-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kb-rq-worker
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./backend:/app/backend
+      - ./.env:/app/.env
+    command: ["python", "-m", "backend.tasks.worker"]
+
+  # ---- 后端 API 服务 ----
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kb-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      rq-worker:
+        condition: service_started
+    volumes:
+      - ./data:/app/data
+      - ./backend:/app/backend
+      - ./.env:/app/.env
+    environment:
+      - REDIS_HOST=redis
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  redis-data:
+    driver: local
