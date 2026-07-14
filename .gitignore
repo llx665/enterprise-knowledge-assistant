@@ -31,3 +31,8 @@ Desktop.ini
 .idea/
 *.swp
 *.swo
+
+# 临时文档（测试自动生成的）
+data/documents/doc_*
+data/bm25_index.json
+data/memory.json
