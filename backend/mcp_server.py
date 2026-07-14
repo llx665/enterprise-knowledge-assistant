@@ -1,7 +1,8 @@
 ﻿# ============================================================
 # MCP Server - exposes KB tools via Model Context Protocol
-# Usage: python -m backend.mcp_server (stdio, for IDE)
-#        python -m backend.mcp_server --sse --port 8001
+# Usage:
+#   python -m backend.mcp_server                 # stdio (for IDE)
+#   python -m backend.mcp_server --port 8001      # SSE (for network)
 # ============================================================
 import sys, os, json, argparse
 
@@ -14,7 +15,7 @@ mcp = FastMCP("EnterpriseKB")
 
 @mcp.tool()
 async def search_knowledge(query: str, top_k: int = 5) -> str:
-    """Search knowledge base. Returns relevant document fragments."""
+    """Search knowledge base. Returns relevant document fragments with citations."""
     from backend.services.hybrid_retriever import hybrid_retriever
     results = await hybrid_retriever.retrieve(query, top_k=min(top_k, 20))
     out = []
@@ -24,7 +25,6 @@ async def search_knowledge(query: str, top_k: int = 5) -> str:
             "filename": meta.get("filename", ""),
             "content": r.get("content", "")[:500],
             "score": round(float(r.get("rrf_score", r.get("score", 0))), 4),
-            "page_number": meta.get("page_number", ""),
         })
     return json.dumps(out, ensure_ascii=False, indent=2)
 
@@ -34,7 +34,7 @@ async def ask_question(question: str, top_k: int = 5) -> str:
     from backend.services.react_agent import react_agent
     answer, passed = await react_agent.process(query=question, session_id="mcp", top_k=min(top_k, 20))
     return json.dumps({
-        "answer": answer or "(No relevant info found in knowledge base)",
+        "answer": answer or "(No relevant info found)",
         "self_check_passed": passed,
     }, ensure_ascii=False, indent=2)
 
@@ -55,11 +55,19 @@ async def list_documents() -> str:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sse", action="store_true", help="Use SSE transport")
-    parser.add_argument("--port", type=int, default=8001)
+    parser.add_argument("--port", type=int, default=0,
+                        help="SSE port (default: stdio mode)")
     args = parser.parse_args()
-    print(f"MCP Server starting ({'SSE:' + str(args.port) if args.sse else 'Stdio'})")
-    if args.sse:
-        mcp.run(transport="sse", port=args.port)
+
+    if args.port:
+        # SSE mode: start HTTP server on specified port
+        import uvicorn
+        app = mcp.sse_app()
+        print(f"MCP SSE Server starting on port {args.port}...")
+        print(f"  Connect: http://127.0.0.1:{args.port}/sse")
+        uvicorn.run(app, host="0.0.0.0", port=args.port)
     else:
+        # Stdio mode (for IDE integration like Cursor/VS Code)
+        print(f"MCP Stdio Server starting...")
+        print(f"  Configure in Cursor: python -m backend.mcp_server")
         mcp.run()
