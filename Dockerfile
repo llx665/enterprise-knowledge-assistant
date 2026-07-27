@@ -40,4 +40,4 @@ RUN mkdir -p /app/data/chroma /app/data/documents /app/data/logs
 EXPOSE 8000
 
 # 启动命令
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "render_start.py"]

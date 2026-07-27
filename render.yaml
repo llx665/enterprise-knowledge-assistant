@@ -1,0 +1,33 @@
+﻿# ============================================================
+# EnterpriseKB - Render Blueprint Configuration
+# Deploys the enterprise knowledge base as a Docker web service
+# ============================================================
+services:
+  - type: web
+    name: enterprise-knowledge-assistant
+    env: docker
+    dockerfilePath: ./Dockerfile
+    repo: https://github.com/llx665/enterprise-knowledge-assistant.git
+    branch: master
+    envVars:
+      # LLM Configuration (must be set manually in Render Dashboard)
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://api.deepseek.com/v1
+      - key: LLM_MODEL
+        value: deepseek-chat
+      # Service port - different from multiagent-assistant (8080)
+      - key: PORT
+        value: "8081"
+      # Redis is optional; app falls back gracefully without it
+      - key: REDIS_HOST
+        value: localhost
+      - key: REDIS_PORT
+        value: "6379"
+      # ChromaDB persistence
+      - key: CHROMA_PERSIST_DIR
+        value: /app/data/chroma
+      # Logging
+      - key: LOG_LEVEL
+        value: INFO
